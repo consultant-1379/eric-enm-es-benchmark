@@ -1,0 +1,13 @@
+apiVersion: v2
+appVersion: "1.0"
+dependencies:
+- alias: eric-data-search-engine
+  #alias: eric-data-search-engine
+  condition: eric-data-search-engine.enabled
+  name: eric-data-search-engine
+  repository: https://arm.rnd.ki.sw.ericsson.se/artifactory/proj-adp-gs-all-helm/
+  version: 12.3.0+29
+description: A Helm chart for es benchmarking
+name: eric-enm-es-benchmark
+version: 0.1.0
+

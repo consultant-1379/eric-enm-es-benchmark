@@ -1,0 +1,132 @@
+modelVersion: 2.0
+
+description: "ENM: CMService Service Group Pipeline"
+
+
+docker-images:
+  - adp-release-auto: armdocker.rnd.ericsson.se/sandbox/adp-staging/adp-cicd/bob-adp-release-auto:latest
+  - es-ci-py37: armdocker.rnd.ericsson.se/proj_oss_releases/enm/pgbm-ci-py37:1.0.0
+
+import:
+  common: common-properties.yaml
+
+env:
+  - PWD
+  - RELEASE (default=true)
+  - HELM_REPO_TOKEN (default=AKCp2WY1HSJFJs1KHqVYtnadmQFw7k3A7JtcW4E9zKXKBRskkM7ZnTUQCfr9FvCp3mFattM8K)
+  - BUILD_DATE (default = $(date +%d%m%Y-%H%M%S --utc))
+  - GIT_COMMITTER_NAME
+  - GIT_COMMITTER_EMAIL
+  - ENABLE_HELM_V3 (default=true)
+
+var:
+  - work-dir
+  - version
+  - image-repo
+  - image-path
+  - cbos-version
+  - helm-chart-repo
+  - cniv-init-image-path
+
+rules:
+  clean:
+    - task: rm
+      cmd:
+        - rm -rf .bob/
+        - rm -rf build/
+        - rm -rf pylint/
+
+  set-working-directory:
+    - task: set-working-directory
+      cmd: pwd > .bob/var.work-dir
+
+  prepare-snapshot-build:
+    - task: generate-version
+      docker-image: adp-release-auto
+      cmd: generate-version --is-release false --output version
+    - task: image-repopath
+      cmd: echo "${common.internal-image-repo}"  > .bob/var.image-repo
+    - task: helm-chart-repopath
+      cmd: echo "${common.helm-chart-snapshot-repo}"  > .bob/var.helm-chart-repo
+
+  prepare-release-build:
+    - task: generate-version
+      docker-image: adp-release-auto
+      cmd: generate-version --is-release true --output version
+    - task: image-repopath
+      cmd: echo "${common.image-repo}"  > .bob/var.image-repo
+    - task: helm-chart-repopath
+      cmd: echo "${common.helm-chart-release-repo}"  > .bob/var.helm-chart-repo
+
+  prepare-docker-image-paths:
+    - task: image-path
+      cmd: echo "${common.registry-url}/${var.image-repo}/${common.image-name}"  > .bob/var.image-path
+    - task: cniv-init-image-path
+      cmd: echo "${common.registry-url}/${var.image-repo}/${common.init-wait-cniv-image-name}"  > .bob/var.cniv-init-image-path
+    - task: cbos-version
+      cmd: echo "${common.cbos-version}"  > .bob/var.cbos-version
+
+  build-and-push-images:
+    - task: docker-build-esbench
+      cmd: /bin/bash -c "cd ${var.work-dir}/esbench && docker build . --build-arg BASE_IMAGE_TAG=${var.version} --build-arg BASE_IMAGE_REPO=${common.registry-url}/${var.image-repo} --build-arg BUILD_DATE=${env.BUILD_DATE} -t ${var.image-path}:${var.version}"
+    - task: docker-build-cniv-init-wait
+      cmd: /bin/bash -c "cd ${var.work-dir}/initbench && docker build . --build-arg BASE_IMAGE_TAG=${var.version} --build-arg BASE_IMAGE_REPO=${common.registry-url}/${var.image-repo} --build-arg BUILD_DATE=${env.BUILD_DATE} -t ${var.cniv-init-image-path}:${var.version}"
+
+    - task: docker-push
+      cmd:
+        - docker push ${var.image-path}:${var.version}
+        - docker push ${var.cniv-init-image-path}:${var.version}
+
+  pycodestyle:
+    - task: pycodestyle
+      docker-image: es-ci-py37
+      cmd:
+        - pycodestyle $(find ${var.work-dir} -iname "*.py" -not -path "*/*bob-build-root*/*")
+           --ignore=W605 --count --show-source  | tee ./pycodestyle.log
+
+  pylint:
+    - task: mkdir
+      cmd:
+        - mkdir ${var.work-dir}/pylint
+    - task: version
+      docker-image: es-ci-py37
+      cmd:
+        - pylint --version
+    - task: pylint
+      docker-image: es-ci-py37
+      cmd:
+        - pylint --fail-under=10 $(find ${var.work-dir} -iname "*.py" ! -path "*/*bob-build-root*/*" )
+          --persistent=n --output=${var.work-dir}/pylint/pylint_results.log
+
+  lint-helm:
+    - task: helm-lint
+      docker-image: adp-release-auto
+      cmd: helm lint chart/${common.helm-chart-name} | tee ./helmlint.log
+
+  lint-helm-artefact:
+    - task: helm-lint
+      docker-image: adp-release-auto
+      cmd: helm lint .bob/${common.helm-chart-name}-${var.version}.tgz | tee ./helmlint-artefact.log
+
+  lint-dockerfile:
+    - task: dockerfile-lint
+      cmd:
+        - docker run --workdir ${var.work-dir} --rm -i hadolint/hadolint < ${var.work-dir}/esbench/Dockerfile | tee -a ./dockerfilelint.log
+        - docker run --workdir ${var.work-dir} --rm -i hadolint/hadolint < ${var.work-dir}/initbench/Dockerfile | tee -a ./dockerfilelint.log
+
+  helm-dep-up:
+    - task: helm-dep-up
+      docker-flags:
+        - "--env ENABLE_HELM_V3=${env.ENABLE_HELM_V3}"
+      docker-image: adp-release-auto
+      cmd: helm dep up ${var.work-dir}/chart/${common.helm-chart-name}
+
+  build-helm:
+    - task: helm-package
+      docker-image: adp-release-auto
+      cmd: helm-package --folder chart/${common.helm-chart-name} --version ${var.version} --replace VERSION=${var.version} --replace REPOPATH=${var.image-repo}
+
+  push-helm:
+    - task: helm-push
+      docker-image: adp-release-auto
+      cmd: upload_file.sh --filename=.bob/${common.helm-chart-name}-${var.version}.tgz --repository=${var.helm-chart-repo} --api-token=${env.HELM_REPO_TOKEN}

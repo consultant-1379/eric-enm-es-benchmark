@@ -1,0 +1,122 @@
+esbench:
+  count: 100
+  docsize: 200KB
+  maxsize: 15GB
+  queryruntime: 1
+  metricruntime: 2
+
+resources:
+  esbench:
+    limits:
+      cpu: "2"
+      memory: "1000Mi"
+    requests:
+      cpu: 2000m
+      memory: "1000Mi"
+
+persistentVolumeClaim:
+  storageClass:
+    block: standard
+
+registry:
+  url: armdocker.rnd.ericsson.se
+
+
+images:
+  initbench:
+    name: eric-enm-es-init-bench
+    tag: VERSION
+  esbench:
+    name: eric-enm-es-benchmark
+    tag: VERSION
+
+imageCredentials:
+  repoPath: proj-eric-oss-cniv/proj-eric-oss-cniv-drop
+  pullPolicy: Always
+  pullSecret:
+
+eric-data-search-engine:
+#eric-data-search-engine:
+  enabled: true
+  global:
+    security:
+      tls:
+        enabled: false
+  logshipper:
+    storagePath: "/logs"
+  log:
+    logshipper:
+      level: "info"
+    outputs:
+      - "stream"
+      - "stdout"
+        #nameOverride: "elasticsearch-tooling"
+  nameOverride: "elasticsearch"
+  replicaCount:
+    ingest: 2
+    master: 3
+    data: 2
+  updateStrategy:
+     ingest:
+       rollingUpdate:
+         maxUnavailable: 1
+         maxSurge: 0
+  searchengine:
+    host: "elasticsearch"
+  annotations:
+    prometheus.io/scrape: "true"
+  affinity:
+    podAntiAffinity: "hard"
+  autoSetRequiredWorkerNodeSysctl: "false"
+  jvmHeap:
+    ingest: "5120m"
+    master: "2048m"
+    data: "7168m"
+  startupProbe:
+    data:
+      periodSeconds: 60
+      failureThreshold: 600
+  resources:
+    ingest:
+      limits:
+        cpu: "2000m"
+        memory: "6Gi"
+      requests:
+        cpu: "500m"
+        memory: "3Gi"
+    master:
+      limits:
+        cpu: "1000m"
+        memory: "3Gi"
+      requests:
+        cpu: "500m"
+        memory: "3Gi"
+    data:
+      limits:
+        cpu: "4000m"
+        memory: "12Gi"
+      requests:
+        cpu: "1000m"
+        memory: "10Gi"
+    logshipper:
+      requests:
+        memory: "100Mi"
+        cpu: "100m"
+      limits:
+        memory: "200Mi"
+        cpu: "200m"
+  persistence:
+    data:
+      persistentVolumeClaim:
+        size: "520Gi"
+    backup:
+      persistentVolumeClaim:
+        size: "520Gi"
+    master:
+      persistentVolumeClaim:
+        size: "512Mi"
+  brAgent:
+    enabled: false
+    customAgent: false
+
+

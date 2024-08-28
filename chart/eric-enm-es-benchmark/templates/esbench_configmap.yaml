@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: esbench-config
+data:
+  esbench-properties: |
+    docs=.Values.count
+    docsize=.Values.docsize
+    maxsize=.Values.maxsize
+    queryruntime=Values.queryruntime
